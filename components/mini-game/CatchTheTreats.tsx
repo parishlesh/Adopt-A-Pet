@@ -119,39 +119,39 @@ export default function CatchTheTreats({
             }
 
             // Move treats and detect catches
-         setTreats((previous) => {
-    const basketLeft = basketRef.current;
-    const basketRight = basketLeft + BASKET_WIDTH;
+            setTreats((previous) => {
+                const basketLeft = basketRef.current;
+                const basketRight = basketLeft + BASKET_WIDTH;
 
-    let caughtCount = 0;
+                let caughtCount = 0;
 
-    const updated = previous
-        .map((treat) => ({
-            ...treat,
-            y: treat.y + delta * 0.12,
-        }))
-        .filter((treat) => {
-            const caught =
-                treat.y + TREAT_SIZE >= 270 &&
-                treat.y <= 300 &&
-                treat.x + TREAT_SIZE >= basketLeft &&
-                treat.x <= basketRight;
+                const updated = previous
+                    .map((treat) => ({
+                        ...treat,
+                        y: treat.y + delta * 0.12,
+                    }))
+                    .filter((treat) => {
+                        const caught =
+                            treat.y + TREAT_SIZE >= 270 &&
+                            treat.y <= 300 &&
+                            treat.x + TREAT_SIZE >= basketLeft &&
+                            treat.x <= basketRight;
 
-            if (caught && !caughtTreatsRef.current.has(treat.id)) {
-                caughtTreatsRef.current.add(treat.id);
-                caughtCount++;
-            }
+                        if (caught && !caughtTreatsRef.current.has(treat.id)) {
+                            caughtTreatsRef.current.add(treat.id);
+                            caughtCount++;
+                        }
 
-            return !caught && treat.y < 320;
-        });
+                        return !caught && treat.y < 320;
+                    });
 
-    if (caughtCount > 0) {
-        scoreRef.current += caughtCount;
-        setScore(scoreRef.current);
-    }
+                if (caughtCount > 0) {
+                    scoreRef.current += caughtCount;
+                    setScore(scoreRef.current);
+                }
 
-    return updated;
-});
+                return updated;
+            });
 
             // Update timer
             if (secondTimer >= 1000) {
@@ -210,6 +210,24 @@ export default function CatchTheTreats({
         setBasketX(nextX);
     };
 
+    const moveBasketTo = (clientX: number) => {
+        const bounds = gameAreaRef.current?.getBoundingClientRect();
+        if (!bounds) return;
+
+        const pointerX = clientX - bounds.left;
+
+        const nextX = Math.max(
+            0,
+            Math.min(
+                GAME_WIDTH - BASKET_WIDTH,
+                pointerX - BASKET_WIDTH / 2
+            )
+        );
+
+        basketRef.current = nextX;
+        setBasketX(nextX);
+    };
+
     return (
         <div className="w-full max-w-md mx-auto bg-white rounded-3xl p-5 shadow-xl">
             <div className="flex justify-between items-center mb-4">
@@ -238,17 +256,20 @@ export default function CatchTheTreats({
 
             <div
                 ref={gameAreaRef}
-                onTouchMove={handleTouchMove}
-                onTouchStart={handleTouchMove}
-                className="relative mx-auto overflow-hidden rounded-2xl border-2 border-[#F2DFCB] bg-[#FFF8ED] touch-none"
+                onPointerDown={(event) => {
+                    if (!started) return;
+
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    moveBasketTo(event.clientX);
+                }}
+                onPointerMove={(event) => {
+                    if (event.buttons === 1 || event.pointerType === "touch") {
+                        moveBasketTo(event.clientX);
+                    }
+                }}
+                className="relative mx-auto overflow-hidden rounded-2xl border-2 border-[#F2DFCB] bg-[#FFF8ED] touch-none cursor-grab active:cursor-grabbing select-none"
                 style={{ width: GAME_WIDTH, height: 320 }}
             >
-                <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none"
-                    style={{
-                        backgroundImage: "radial-gradient(#D8B99B 1px, transparent 1px)",
-                        backgroundSize: "20px 20px",
-                    }}
-                />
 
                 {treats.map((treat) => (
                     <div

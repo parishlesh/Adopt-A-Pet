@@ -205,17 +205,7 @@ export default function PetDashboard() {
 
 
                 <section className="mt-8 bg-white rounded-3xl p-6">
-                    <button
-                        onClick={() => setIsGameOpen(true)}
-                        disabled={pet.isSleeping || !!activeAction || pet.energy < 10}
-                        className="col-span-3 bg-[#F0E9FC] p-4 rounded-2xl text-[#493B32] disabled:opacity-50"
-                    >
-                        <span className="block text-2xl mb-2">🍓</span>
-                        Catch the Treats
-                        <span className="block text-xs mt-1 text-[#927F72]">
-                            Play a mini-game with your pet!
-                        </span>
-                    </button>
+                    
 
                     <div className="grid grid-cols-3 gap-3">
                         <button
@@ -254,6 +244,17 @@ export default function PetDashboard() {
                             </button>
                         )}
 
+                    <button
+                        onClick={() => setIsGameOpen(true)}
+                        disabled={pet.isSleeping || !!activeAction || pet.energy < 10}
+                        className="col-span-3 bg-[#F0E9FC] p-4 rounded-2xl text-[#493B32] disabled:opacity-50"
+                    >
+                        <span className="block text-2xl mb-2">🍓</span>
+                        Catch the Treats
+                        <span className="block text-xs mt-1 text-[#927F72]">
+                            Play a mini-game with your pet!
+                        </span>
+                    </button>
                     </div>
                 </section>
 
