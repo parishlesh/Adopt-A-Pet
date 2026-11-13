@@ -10,43 +10,13 @@ import { usePetStore } from "@/store/petStore";
 export default function AdoptionScreen() {
   const [selectedPet, setSelectedPet] = useState(PETS[0]);
   const [petName, setPetName] = useState("");
-  const [adopted, setAdopted] = useState(false);
 
   const adoptPet = usePetStore((state) => state.adoptPet);
 
   const handleAdopt = () => {
     if (!petName.trim()) return;
     adoptPet(selectedPet, petName.trim());
-    setAdopted(true);
   };
-
-  if (adopted) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-[#FFF9F0] p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
-          <div className="text-8xl mb-6">
-            {selectedPet.emoji}
-          </div>
-          <h1 className="text-4xl font-bold text-[#493B32]">
-            Meet {petName}!
-          </h1>
-          <p className="text-[#8B7B70] mt-3">
-            Your little adventure starts today.
-          </p>
-          <button
-            onClick={() => setAdopted(false)}
-            className="mt-8 rounded-full bg-[#493B32] text-white px-8 py-3"
-          >
-            Back
-          </button>
-        </motion.div>
-      </main>
-    );
-  }
 
   return (
     <main className="min-h-screen bg-[#FFF9F0] px-5 py-12 flex items-center justify-center">

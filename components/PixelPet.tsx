@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { AdoptedPet } from "@/store/petStore";
 import Image from "next/image";
 import PetMoodEffect from "@/components/PetMoodEffect";
+import PetAccessory from "@/components/PetAccessory";
+import { usePetStore } from "@/store/petStore";
 import { getPetMood, getPetGrowth } from "@/lib/petEngine";
 
 
@@ -72,6 +74,7 @@ export default function PixelPet({
     activeAction,
 }: PixelPetProps) {
     const mood = getPetMood(pet);
+    const equippedAccessory = usePetStore((state) => state.equippedAccessory);
 
  const moodFile = pet.isSleeping
     ? "sleepy"
@@ -81,7 +84,8 @@ export default function PixelPet({
 
     const growth = getPetGrowth(pet.adoptedAt);
 
-    const spritePath = `/pets/${pet.id}/${growth.stage.toLowerCase()}/${moodFile}.png`;
+    const spriteKey = `${pet.id}/${growth.stage.toLowerCase()}/${moodFile}`;
+    const spritePath = `/pets/${spriteKey}.png`;
 
     const config = moodConfig[mood as keyof typeof moodConfig];
     return (
@@ -175,8 +179,15 @@ transition={{
                             fill
                             className="object-contain"
                             style={{ imageRendering: "pixelated" }}
-                            priority
+                            loading="eager"
                         />
+
+                        {equippedAccessory && (
+                            <PetAccessory
+                                spriteKey={spriteKey}
+                                accessoryId={equippedAccessory}
+                            />
+                        )}
                     </motion.div>
 
                 </div>

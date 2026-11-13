@@ -1,8 +1,18 @@
-
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { getGameRewards, type GameRewards } from "@/lib/miniGameRewards";
+import { TEST_MODE } from "@/lib/petEngine";
+
+// Re-exported so existing imports from this file keep working.
+export type { GameRewards };
+
+interface CatchEffect {
+    id: number;
+    x: number;
+    y: number;
+}
 
 interface Treat {
     id: number;
@@ -12,16 +22,25 @@ interface Treat {
 }
 
 interface CatchTheTreatsProps {
-    onGameComplete: (score: number) => void;
+    onGameComplete: (score: number, rewards: GameRewards) => void;
     onClose: () => void;
 }
 
-const GAME_DURATION = 10;
+type Direction = "left" | "right";
+
+const GAME_DURATION = TEST_MODE ? 10 : 30; // seconds
+// Logical play-field size. Physics runs in these units; the field is scaled to fit narrow screens.
 const GAME_WIDTH = 320;
+const GAME_HEIGHT = 320;
 const BASKET_WIDTH = 64;
+const BASKET_START_X = (GAME_WIDTH - BASKET_WIDTH) / 2;
+const BASKET_SPEED = 0.35; // px per ms for keyboard / button movement
 const TREAT_SIZE = 28;
 
 const TREATS = ["🍓", "🍎", "🍪", "🫐", "🍒"];
+
+const clampBasketX = (x: number) =>
+    Math.max(0, Math.min(GAME_WIDTH - BASKET_WIDTH, x));
 
 export default function CatchTheTreats({
     onGameComplete,
@@ -30,60 +49,111 @@ export default function CatchTheTreats({
     const [started, setStarted] = useState(false);
     const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
     const [score, setScore] = useState(0);
-    const [basketX, setBasketX] = useState(128);
+    const [basketX, setBasketX] = useState(BASKET_START_X);
     const [treats, setTreats] = useState<Treat[]>([]);
     const [gameOver, setGameOver] = useState(false);
+    const [catchEffects, setCatchEffects] = useState<CatchEffect[]>([]);
+    const [basketBounce, setBasketBounce] = useState(false);
 
-    const basketRef = useRef(128);
+    const basketRef = useRef(BASKET_START_X);
     const scoreRef = useRef(0);
     const treatIdRef = useRef(0);
     const gameOverRef = useRef(false);
-    const spawnTimerRef = useRef(0);
-    const lastFrameRef = useRef(0);
     const gameAreaRef = useRef<HTMLDivElement>(null);
     const caughtTreatsRef = useRef(new Set<number>());
+    const heldDirectionsRef = useRef(new Set<Direction>());
+    const isDraggingRef = useRef(false);
+    const catchEffectIdRef = useRef(0);
+    const fieldWrapperRef = useRef<HTMLDivElement>(null);
+    const [fieldScale, setFieldScale] = useState(1);
 
-    const moveBasket = useCallback((direction: number) => {
-        const nextX = Math.max(
-            0,
-            Math.min(
-                GAME_WIDTH - BASKET_WIDTH,
-                basketRef.current + direction * 24
-            )
-        );
+    // Scale the fixed 320x320 field down on screens narrower than the field.
+    useEffect(() => {
+        const wrapper = fieldWrapperRef.current;
+        if (!wrapper) return;
 
+        const observer = new ResizeObserver(([entry]) => {
+            setFieldScale(Math.min(1, entry.contentRect.width / GAME_WIDTH));
+        });
+
+        observer.observe(wrapper);
+        return () => observer.disconnect();
+    }, []);
+
+
+    const setBasketPosition = useCallback((x: number) => {
+        const nextX = clampBasketX(x);
         basketRef.current = nextX;
         setBasketX(nextX);
     }, []);
+
+    const moveBasketTo = useCallback(
+        (clientX: number) => {
+            const bounds = gameAreaRef.current?.getBoundingClientRect();
+            if (!bounds) return;
+
+            const scale = GAME_WIDTH / bounds.width;
+            const pointerX = (clientX - bounds.left) * scale;
+
+            setBasketPosition(pointerX - BASKET_WIDTH / 2);
+        },
+        [setBasketPosition]
+    );
 
     const finishGame = useCallback(() => {
         if (gameOverRef.current) return;
 
         gameOverRef.current = true;
+        heldDirectionsRef.current.clear();
+        isDraggingRef.current = false;
+
+        const score = scoreRef.current;
+        const rewards = getGameRewards(score);
+
         setGameOver(true);
         setStarted(false);
-        onGameComplete(scoreRef.current);
+
+        onGameComplete(score, rewards);
     }, [onGameComplete]);
 
+    // Keyboard: track held keys; actual movement happens in the game loop
     useEffect(() => {
         if (!started || gameOver) return;
 
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
-                event.preventDefault();
-                moveBasket(-1);
-            }
+        const held = heldDirectionsRef.current;
 
-            if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
-                event.preventDefault();
-                moveBasket(1);
-            }
+        const keyToDirection = (key: string): Direction | null => {
+            if (key === "ArrowLeft" || key.toLowerCase() === "a") return "left";
+            if (key === "ArrowRight" || key.toLowerCase() === "d") return "right";
+            return null;
         };
 
-        window.addEventListener("keydown", handleKeyDown);
+        const handleKeyDown = (event: KeyboardEvent) => {
+            const direction = keyToDirection(event.key);
+            if (!direction) return;
 
-        return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [started, gameOver, moveBasket]);
+            event.preventDefault();
+            held.add(direction);
+        };
+
+        const handleKeyUp = (event: KeyboardEvent) => {
+            const direction = keyToDirection(event.key);
+            if (direction) held.delete(direction);
+        };
+
+        const handleBlur = () => held.clear();
+
+        window.addEventListener("keydown", handleKeyDown);
+        window.addEventListener("keyup", handleKeyUp);
+        window.addEventListener("blur", handleBlur);
+
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("keyup", handleKeyUp);
+            window.removeEventListener("blur", handleBlur);
+            held.clear();
+        };
+    }, [started, gameOver]);
 
     useEffect(() => {
         if (!started || gameOver) return;
@@ -101,6 +171,17 @@ export default function CatchTheTreats({
 
             spawnTimer += delta;
             secondTimer += delta;
+
+            // Continuous keyboard / button movement (drag takes priority)
+            const held = heldDirectionsRef.current;
+            const direction =
+                (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
+
+            if (direction !== 0 && !isDraggingRef.current) {
+                setBasketPosition(
+                    basketRef.current + direction * BASKET_SPEED * delta
+                );
+            }
 
             // Spawn a new treat every 850ms
             if (spawnTimer >= 850) {
@@ -140,6 +221,29 @@ export default function CatchTheTreats({
                         if (caught && !caughtTreatsRef.current.has(treat.id)) {
                             caughtTreatsRef.current.add(treat.id);
                             caughtCount++;
+
+                            const effectId = ++catchEffectIdRef.current;
+
+                            setCatchEffects((previous) => [
+                                ...previous,
+                                {
+                                    id: effectId,
+                                    x: treat.x,
+                                    y: 260,
+                                },
+                            ]);
+
+                            setBasketBounce(true);
+
+                            setTimeout(() => {
+                                setBasketBounce(false);
+                            }, 180);
+
+                            setTimeout(() => {
+                                setCatchEffects((previous) =>
+                                    previous.filter((effect) => effect.id !== effectId)
+                                );
+                            }, 750);
                         }
 
                         return !caught && treat.y < 320;
@@ -168,7 +272,7 @@ export default function CatchTheTreats({
         animationFrame = requestAnimationFrame(loop);
 
         return () => cancelAnimationFrame(animationFrame);
-    }, [started, gameOver, finishGame]);
+    }, [started, gameOver, setBasketPosition]);
 
     useEffect(() => {
         if (started && timeLeft === 0 && !gameOver) {
@@ -177,56 +281,61 @@ export default function CatchTheTreats({
     }, [started, timeLeft, gameOver, finishGame]);
 
     const startGame = () => {
-        basketRef.current = 128;
+        basketRef.current = BASKET_START_X;
         scoreRef.current = 0;
         treatIdRef.current = 0;
-        spawnTimerRef.current = 0;
-        lastFrameRef.current = 0;
         gameOverRef.current = false;
         caughtTreatsRef.current.clear();
+        heldDirectionsRef.current.clear();
+        isDraggingRef.current = false;
 
-        setBasketX(128);
+        setBasketX(BASKET_START_X);
         setScore(0);
         setTimeLeft(GAME_DURATION);
         setTreats([]);
         setGameOver(false);
         setStarted(true);
+        setCatchEffects([]);
+        setBasketBounce(false);
     };
 
-    const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
-        const bounds = gameAreaRef.current?.getBoundingClientRect();
-        if (!bounds) return;
+    // Mouse + touch + pen drag via Pointer Events
+    const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!started || gameOver) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
 
-        const touchX = event.touches[0].clientX - bounds.left;
-        const nextX = Math.max(
-            0,
-            Math.min(
-                GAME_WIDTH - BASKET_WIDTH,
-                touchX - BASKET_WIDTH / 2
-            )
-        );
-
-        basketRef.current = nextX;
-        setBasketX(nextX);
+        isDraggingRef.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        moveBasketTo(event.clientX);
     };
 
-    const moveBasketTo = (clientX: number) => {
-        const bounds = gameAreaRef.current?.getBoundingClientRect();
-        if (!bounds) return;
-
-        const pointerX = clientX - bounds.left;
-
-        const nextX = Math.max(
-            0,
-            Math.min(
-                GAME_WIDTH - BASKET_WIDTH,
-                pointerX - BASKET_WIDTH / 2
-            )
-        );
-
-        basketRef.current = nextX;
-        setBasketX(nextX);
+    const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!isDraggingRef.current) return;
+        moveBasketTo(event.clientX);
     };
+
+    const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+        isDraggingRef.current = false;
+
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+    };
+
+    // On-screen buttons: press and hold to move
+    const pressDirection = (
+        event: React.PointerEvent<HTMLButtonElement>,
+        direction: Direction
+    ) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        heldDirectionsRef.current.add(direction);
+    };
+
+    const releaseDirection = (direction: Direction) => {
+        heldDirectionsRef.current.delete(direction);
+    };
+
+    const summaryRewards = getGameRewards(score);
 
     return (
         <div className="w-full max-w-md mx-auto bg-white rounded-3xl p-5 shadow-xl">
@@ -255,22 +364,25 @@ export default function CatchTheTreats({
             </div>
 
             <div
-                ref={gameAreaRef}
-                onPointerDown={(event) => {
-                    if (!started) return;
-
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    moveBasketTo(event.clientX);
-                }}
-                onPointerMove={(event) => {
-                    if (event.buttons === 1 || event.pointerType === "touch") {
-                        moveBasketTo(event.clientX);
-                    }
-                }}
-                className="relative mx-auto overflow-hidden rounded-2xl border-2 border-[#F2DFCB] bg-[#FFF8ED] touch-none cursor-grab active:cursor-grabbing select-none"
-                style={{ width: GAME_WIDTH, height: 320 }}
+                ref={fieldWrapperRef}
+                className="w-full mx-auto"
+                style={{ maxWidth: GAME_WIDTH, height: GAME_HEIGHT * fieldScale }}
             >
-
+            <div
+                ref={gameAreaRef}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                className={`relative overflow-hidden rounded-2xl border-2 border-[#F2DFCB] bg-[#FFF8ED] touch-none select-none ${started ? "cursor-grab active:cursor-grabbing" : ""
+                    }`}
+                style={{
+                    width: GAME_WIDTH,
+                    height: GAME_HEIGHT,
+                    transform: `scale(${fieldScale})`,
+                    transformOrigin: "top left",
+                }}
+            >
                 {treats.map((treat) => (
                     <div
                         key={treat.id}
@@ -285,15 +397,49 @@ export default function CatchTheTreats({
                         {treat.emoji}
                     </div>
                 ))}
+                <AnimatePresence>
+                    {catchEffects.map((effect) => (
+                        <motion.div
+                            key={effect.id}
+                            initial={{
+                                opacity: 1,
+                                y: 0,
+                                scale: 0.6,
+                            }}
+                            animate={{
+                                opacity: 0,
+                                y: -55,
+                                scale: 1.2,
+                            }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.7 }}
+                            className="absolute z-20 pointer-events-none font-black text-lg text-green-600"
+                            style={{
+                                left: effect.x,
+                                top: effect.y,
+                            }}
+                        >
+                            +1 ✨
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
 
-                <motion.div
-                    className="absolute bottom-4 text-4xl"
-                    animate={{ x: basketX }}
-                    transition={{ duration: 0.05 }}
-                    style={{ left: 0, width: BASKET_WIDTH }}
-                >
-                    🧺
-                </motion.div>
+             <motion.div
+    animate={{
+        x: basketX,
+        y: basketBounce ? [0, -10, 0] : 0,
+        scale: basketBounce ? [1, 1.15, 1] : 1,
+    }}
+    transition={{
+        x: { duration: 0 },
+        y: { duration: 0.18 },
+        scale: { duration: 0.18 },
+    }}
+    className="absolute bottom-4 left-0 text-4xl text-center will-change-transform pointer-events-none"
+    style={{ width: BASKET_WIDTH }}
+>
+    🧺
+</motion.div>
 
                 {!started && !gameOver && (
                     <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center">
@@ -311,39 +457,82 @@ export default function CatchTheTreats({
                 )}
 
                 {gameOver && (
-                    <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center">
-                        <span className="text-5xl mb-3">🏆</span>
-                        <h3 className="text-2xl font-bold text-[#493B32]">
-                            Time&apos;s up!
+                    <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center p-4 z-10">
+                        <span className="text-5xl mb-2">🏆</span>
+
+                        <h3 className="text-2xl font-black text-[#493B32]">
+                            Amazing Work!
                         </h3>
-                        <p className="text-[#B08C70] mb-4">
+
+                        <p className="text-[#B08C70] font-semibold mb-3">
                             You caught {score} treats!
                         </p>
-                        <p className="text-sm text-[#493B32] mb-4">
-                            Your pet will love these treats! ❤️
-                        </p>
-                        <button
-                            onClick={startGame}
-                            className="bg-[#B08C70] text-white px-6 py-3 rounded-xl font-bold"
-                        >
-                            Play Again
-                        </button>
+
+                        <div className="w-full max-w-60 bg-[#FFF8ED] rounded-xl p-3 mb-4">
+                            <p className="text-sm font-bold text-[#493B32] mb-2 text-center">
+                                Your pet&apos;s rewards ❤️
+                            </p>
+
+                            <div className="flex justify-between text-sm mb-1">
+                                <span>❤️ Happiness</span>
+                                <span className="font-bold text-green-600">
+                                    +{summaryRewards.happiness}
+                                </span>
+                            </div>
+
+                            <div className="flex justify-between text-sm mb-1">
+                                <span>⚡ Energy</span>
+                                <span className="font-bold text-red-500">{summaryRewards.energy}</span>
+                            </div>
+
+                            <div className="flex justify-between text-sm">
+                                <span>🍽️ Fullness</span>
+                                <span className="font-bold text-red-500">{summaryRewards.hunger}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 w-full max-w-65">
+                            <button
+                                onClick={startGame}
+                                className="flex-1 bg-[#FFF0D9] text-[#493B32] py-2.5 rounded-xl font-bold text-sm"
+                            >
+                                Play Again
+                            </button>
+
+                            <button
+                                onClick={onClose}
+                                className="flex-1 bg-[#B08C70] text-white py-2.5 rounded-xl font-bold text-sm"
+                            >
+                                Continue
+                            </button>
+                        </div>
                     </div>
                 )}
+            </div>
             </div>
 
             {started && (
                 <div className="flex justify-center gap-8 mt-4">
                     <button
-                        onClick={() => moveBasket(-1)}
-                        className="bg-[#FFF0D9] px-8 py-3 rounded-xl text-2xl"
+                        onPointerDown={(event) => pressDirection(event, "left")}
+                        onPointerUp={() => releaseDirection("left")}
+                        onPointerCancel={() => releaseDirection("left")}
+                        onLostPointerCapture={() => releaseDirection("left")}
+                        onContextMenu={(event) => event.preventDefault()}
+                        className="bg-[#FFF0D9] px-8 py-3 rounded-xl text-2xl touch-none select-none"
+                        aria-label="Move basket left"
                     >
                         ←
                     </button>
 
                     <button
-                        onClick={() => moveBasket(1)}
-                        className="bg-[#FFF0D9] px-8 py-3 rounded-xl text-2xl"
+                        onPointerDown={(event) => pressDirection(event, "right")}
+                        onPointerUp={() => releaseDirection("right")}
+                        onPointerCancel={() => releaseDirection("right")}
+                        onLostPointerCapture={() => releaseDirection("right")}
+                        onContextMenu={(event) => event.preventDefault()}
+                        className="bg-[#FFF0D9] px-8 py-3 rounded-xl text-2xl touch-none select-none"
+                        aria-label="Move basket right"
                     >
                         →
                     </button>
@@ -351,7 +540,7 @@ export default function CatchTheTreats({
             )}
 
             <p className="text-center text-xs text-[#B08C70] mt-4">
-                Use ← → keys, A/D, or drag on mobile to move your basket.
+                Drag inside the game area, or use ← → / A D to move your basket.
             </p>
         </div>
     );

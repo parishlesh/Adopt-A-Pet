@@ -40,5 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-#public folders
-/public
+# local sprite backups (originals before strip cleanup)
+/sprite-backup

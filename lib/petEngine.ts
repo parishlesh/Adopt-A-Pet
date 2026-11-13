@@ -1,5 +1,6 @@
 
 import type { AdoptedPet } from "@/store/petStore";
+import type { StatEffects, StatKey } from "@/lib/shopConfig";
 
 const DECAY_RATES = {
   hunger: 10,
@@ -11,8 +12,8 @@ const DECAY_RATES = {
 const SLEEP_DURATION = 30 * 60 * 1000;
 const TEST_SLEEP_DURATION = 60 * 1000;
 
-// Set to true while testing.
-export const TEST_MODE = true;
+// Set to true while testing (1-minute sleep, 10-second mini-game).
+export const TEST_MODE = false;
 
 export const getSleepDuration = () =>
   TEST_MODE ? TEST_SLEEP_DURATION : SLEEP_DURATION;
@@ -57,6 +58,15 @@ export function calculatePetStats(
       100,
       energy + recoveryMinutes * (100 / (getSleepDuration() / 60000))
     );
+
+    // If the sleep ended before this update (e.g. the browser was closed),
+    // the pet has been awake since sleepUntil: apply normal decay for that time.
+    const awakeMinutes = Math.max(
+      0,
+      (currentTime - Math.max(pet.sleepUntil, lastUpdated)) / 60000
+    );
+
+    energy = Math.max(0, energy - awakeMinutes / 30);
   } else {
     // Normal energy decay when awake.
     energy = Math.max(
@@ -130,4 +140,35 @@ export function getPetGrowth(adoptedAt: number) {
         progress: (ageInDays / 3) * 100,
         nextStage: "Teen",
     };
+}
+
+
+// ---------------------------------------------------------------------------
+// Stat effect helpers (used by shop items)
+// ---------------------------------------------------------------------------
+
+export type PetStats = Record<StatKey, number>;
+
+const STAT_KEYS: StatKey[] = ["hunger", "happiness", "energy"];
+
+export const clampStat = (value: number) => Math.max(0, Math.min(100, value));
+
+export function applyStatEffects(stats: PetStats, effects: StatEffects): PetStats {
+    return {
+        hunger: clampStat(stats.hunger + (effects.hunger ?? 0)),
+        happiness: clampStat(stats.happiness + (effects.happiness ?? 0)),
+        energy: clampStat(stats.energy + (effects.energy ?? 0)),
+    };
+}
+
+/** The change that actually landed after capping, rounded for display. */
+export function getAppliedEffects(before: PetStats, after: PetStats): StatEffects {
+    const applied: StatEffects = {};
+
+    for (const stat of STAT_KEYS) {
+        const delta = Math.round(after[stat] - before[stat]);
+        if (delta !== 0) applied[stat] = delta;
+    }
+
+    return applied;
 }
