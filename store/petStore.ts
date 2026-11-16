@@ -77,6 +77,9 @@ interface PetState {
     consumeItem: (itemId: string) => UseItemResult;
     equipAccessory: (itemId: string) => EquipResult;
     unequipAccessory: () => void;
+
+    /** Credit coins earned in gameplay. Positive integers only. */
+    addCoins: (amount: number) => boolean;
 }
 
 /**
@@ -396,6 +399,14 @@ export const usePetStore = create<PetState>()(
             },
 
             unequipAccessory: () => set({ equippedAccessory: null }),
+
+            addCoins: (amount) => {
+                if (!isStoreReady()) return false;
+                if (!Number.isInteger(amount) || amount <= 0) return false;
+
+                set((state) => ({ coins: state.coins + amount }));
+                return true;
+            },
 
             // Coins, inventory and accessories belong to the player, not the pet,
             // so they survive a reset.

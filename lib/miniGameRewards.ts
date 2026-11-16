@@ -1,7 +1,24 @@
 /**
- * Catch the Treats reward rules, shared by the game's summary screen and the
- * dashboard that applies them.
+ * Catch the Treats reward rules and tuning, shared by the game, its summary
+ * screen and the dashboard that applies end-of-game rewards.
  */
+
+// ---------------------------------------------------------------------------
+// Coin drops: coins are earned only by catching them, never from the score.
+// ---------------------------------------------------------------------------
+
+/** Chance that each coin roll drops a coin (rolls run on the spawn interval). */
+export const COIN_DROP_CHANCE = 0.08;
+
+/** Coins credited to the wallet per coin caught. */
+export const COIN_REWARD = 5;
+
+/** Coins allowed on screen at once. */
+export const MAX_ACTIVE_COINS = 1;
+
+// ---------------------------------------------------------------------------
+// End-of-game pet rewards
+// ---------------------------------------------------------------------------
 
 export interface GameRewards {
     happiness: number;

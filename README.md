@@ -2,7 +2,7 @@
 
 A cozy browser virtual pet game. Adopt a pixel-art pet, give it a name, keep it fed, happy and rested, play a mini-game together, spend your coins in the Pet Shop, and watch it grow from baby to adult.
 
-**Live demo:** _coming soon_ · **Built with:** Next.js · TypeScript · Tailwind CSS · Zustand · Framer Motion
+**Live demo:** [adopt-a-pet-flax.vercel.app](https://adopt-a-pet-flax.vercel.app/) · **Built with:** Next.js · TypeScript · Tailwind CSS · Zustand · Framer Motion
 
 | Dashboard | Pet Shop | Catch the Treats |
 |---|---|---|
