@@ -14,6 +14,16 @@ import {
     type UseItemResult,
 } from "@/lib/shopConfig";
 import {
+    DAILY_CHALLENGES,
+    EMPTY_CHALLENGE_STATE,
+    challengesForToday,
+    getChallenge,
+    type ChallengeEvent,
+    type ChallengeId,
+    type ClaimChallengeResult,
+    type DailyChallengeState,
+} from "@/lib/dailyChallenges";
+import {
     applyStatEffects,
     calculatePetStats,
     getAppliedEffects,
@@ -56,6 +66,9 @@ interface PetState {
     dailyStreak: number;
     lastDailyClaimDate: string | null;
 
+    // Daily challenges (separate from daily login rewards)
+    dailyChallenges: DailyChallengeState;
+
     // Pet Shop
     inventory: Inventory;
     ownedAccessories: string[];
@@ -80,6 +93,10 @@ interface PetState {
 
     /** Credit coins earned in gameplay. Positive integers only. */
     addCoins: (amount: number) => boolean;
+
+    /** Count a successful gameplay event toward today's challenges. */
+    recordChallengeEvent: (event: ChallengeEvent) => void;
+    claimChallenge: (challengeId: string) => ClaimChallengeResult;
 }
 
 /**
@@ -91,7 +108,7 @@ const settlePet = (pet: AdoptedPet, now: number): AdoptedPet => ({
     ...(calculatePetStats(pet, now) ?? {}),
 });
 
-const getLocalDateString = (date: Date) => {
+export const getLocalDateString = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
@@ -152,6 +169,32 @@ const sanitizeEquippedAccessory = (
  * With skipHydration, writing before rehydrate() finishes would overwrite the
  * saved game. Shop actions refuse to run until then.
  */
+/** Keeps only known challenges, integer progress capped at the goal, and unique claims. */
+const sanitizeDailyChallenges = (value: unknown): DailyChallengeState => {
+    if (!isRecord(value) || typeof value.date !== "string") {
+        return EMPTY_CHALLENGE_STATE;
+    }
+
+    const savedProgress = isRecord(value.progress) ? value.progress : {};
+    const progress: DailyChallengeState["progress"] = {};
+
+    for (const challenge of DAILY_CHALLENGES) {
+        const count = savedProgress[challenge.id];
+        if (typeof count === "number" && Number.isInteger(count) && count > 0) {
+            progress[challenge.id] = Math.min(count, challenge.goal);
+        }
+    }
+
+    const claimed = Array.isArray(value.claimed)
+        ? [...new Set(value.claimed)].filter(
+              (id): id is ChallengeId =>
+                  typeof id === "string" && Boolean(getChallenge(id))
+          )
+        : [];
+
+    return { date: value.date, progress, claimed };
+};
+
 const isStoreReady = () => usePetStore.persist.hasHydrated();
 
 
@@ -163,6 +206,7 @@ export const usePetStore = create<PetState>()(
 
             coins: 0,
             dailyStreak: 0,
+            dailyChallenges: EMPTY_CHALLENGE_STATE,
             lastDailyClaimDate: null,
 
             inventory: {},
@@ -376,6 +420,10 @@ export const usePetStore = create<PetState>()(
                     },
                 });
 
+                if (item.category === "food") {
+                    get().recordChallengeEvent("feed");
+                }
+
                 return {
                     ok: true,
                     item,
@@ -408,6 +456,57 @@ export const usePetStore = create<PetState>()(
                 return true;
             },
 
+            recordChallengeEvent: (event) => {
+                if (!isStoreReady()) return;
+
+                const today = getLocalDateString(new Date());
+
+                set((state) => {
+                    const current = challengesForToday(state.dailyChallenges, today);
+                    const progress = { ...current.progress };
+
+                    for (const challenge of DAILY_CHALLENGES) {
+                        if (challenge.event !== event) continue;
+
+                        progress[challenge.id] = Math.min(
+                            challenge.goal,
+                            (progress[challenge.id] ?? 0) + 1
+                        );
+                    }
+
+                    return { dailyChallenges: { ...current, progress } };
+                });
+            },
+
+            claimChallenge: (challengeId) => {
+                if (!isStoreReady()) return { ok: false, reason: "NOT_READY" };
+
+                const challenge = getChallenge(challengeId);
+                if (!challenge) return { ok: false, reason: "INVALID_CHALLENGE" };
+
+                const today = getLocalDateString(new Date());
+                const current = challengesForToday(get().dailyChallenges, today);
+
+                if (current.claimed.includes(challenge.id)) {
+                    return { ok: false, reason: "ALREADY_CLAIMED" };
+                }
+
+                if ((current.progress[challenge.id] ?? 0) < challenge.goal) {
+                    return { ok: false, reason: "NOT_COMPLETE" };
+                }
+
+                // Mark claimed first so a repeat call can never pay twice.
+                set({
+                    dailyChallenges: {
+                        ...current,
+                        claimed: [...current.claimed, challenge.id],
+                    },
+                });
+                get().addCoins(challenge.reward);
+
+                return { ok: true, challenge };
+            },
+
             // Coins, inventory and accessories belong to the player, not the pet,
             // so they survive a reset.
             resetPet: () => set({ adoptedPet: null }),
@@ -437,6 +536,9 @@ export const usePetStore = create<PetState>()(
                     equippedAccessory: sanitizeEquippedAccessory(
                         persisted.equippedAccessory,
                         ownedAccessories
+                    ),
+                    dailyChallenges: sanitizeDailyChallenges(
+                        persisted.dailyChallenges
                     ),
                 };
             },

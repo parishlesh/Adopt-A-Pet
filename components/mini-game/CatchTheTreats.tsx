@@ -181,6 +181,8 @@ export default function CatchTheTreats({
         setGameOver(true);
         setStarted(false);
 
+        // Only a game that ran to the end counts; closing early never gets here.
+        usePetStore.getState().recordChallengeEvent("game-complete");
         onGameCompleteRef.current(score, rewards);
     }, []);
 
@@ -201,6 +203,7 @@ export default function CatchTheTreats({
                 if (usePetStore.getState().addCoins(COIN_REWARD)) {
                     coinsCollectedRef.current += COIN_REWARD;
                     effects.push(coin);
+                    usePetStore.getState().recordChallengeEvent("coin-catch");
                 }
             }
 

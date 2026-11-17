@@ -23,6 +23,7 @@ import CatchTheTreats, {
     type GameRewards,
 } from "./mini-game/CatchTheTreats";
 import PetShop from "@/components/shop/PetShop";
+import DailyChallenges from "@/components/DailyChallenges";
 
 export default function PetDashboard() {
     const pet = usePetStore((state) => state.adoptedPet);
@@ -151,6 +152,7 @@ export default function PetDashboard() {
                 hunger: Math.min(100, currentPet.hunger + 20),
                 happiness: Math.min(100, currentPet.happiness + 5),
             });
+            usePetStore.getState().recordChallengeEvent("feed");
         }
 
         if (action === "play") {
@@ -326,6 +328,8 @@ export default function PetDashboard() {
                         </button>
                     </div>
                 </section>
+
+                <DailyChallenges />
 
 
                 {!hasClaimedToday && (
